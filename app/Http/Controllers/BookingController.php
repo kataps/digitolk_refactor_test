@@ -1,19 +1,22 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DTApi\Http\Controllers;
 
-use DTApi\Models\Job;
-use DTApi\Http\Requests;
+use App\Http\Traits\ResponseWithJsonTrait;
 use DTApi\Models\Distance;
-use Illuminate\Http\Request;
+use DTApi\Models\Job;
 use DTApi\Repository\BookingRepository;
-
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 /**
  * Class BookingController
  * @package DTApi\Http\Controllers
  */
 class BookingController extends Controller
 {
+    use ResponseWithJsonTrait;
 
     /**
      * @var BookingRepository
@@ -31,264 +34,262 @@ class BookingController extends Controller
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function index(Request $request)
+
+    public function index(Request $request): JsonResponse
     {
+        $has_any_admin_role = $request->__authenticatedUser->user_type === env('ADMIN_ROLE_ID')
+            || $request->__authenticatedUser->user_type === env('SUPERADMIN_ROLE_ID');
+
         if($user_id = $request->get('user_id')) {
 
             $response = $this->repository->getUsersJobs($user_id);
 
-        }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
-        {
+        } else if ($has_any_admin_role) {
             $response = $this->repository->getAll($request);
         }
 
-        return response($response);
+        return $this->successJsonResponse(null, $response);
     }
 
     /**
-     * @param $id
-     * @return mixed
+     * @param int $id
+     * @return JsonResponse
      */
-    public function show($id)
+    public function show(int $id)
     {
         $job = $this->repository->with('translatorJobRel.user')->find($id);
 
-        return response($job);
+        return $this->successJsonResponse(null, $job);
     }
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $data = $request->all();
-
         $response = $this->repository->store($request->__authenticatedUser, $data);
 
-        return response($response);
-
+        return $this->successJsonResponse(null, $response);
     }
 
     /**
-     * @param $id
+     * @param int $id
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function update($id, Request $request)
+    public function update(int $id, Request $request): JsonResponse
     {
-        $data = $request->all();
-        $cuser = $request->__authenticatedUser;
-        $response = $this->repository->updateJob($id, array_except($data, ['_token', 'submit']), $cuser);
+        $job = $this->repository->find($id);
+        if (! $job) {
+            return $this->errorJsonResponse('Job Doesnt exist');
+        }
 
-        return response($response);
+        $data =  $request->except('_token', 'submit');
+        $cuser = $request->__authenticatedUser;
+        $response = $this->repository->updateJob($id, $data, $cuser);
+
+        return $this->successJsonResponse("Job Successfully Updated!", $response);
     }
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function immediateJobEmail(Request $request)
+    public function immediateJobEmail(Request $request): JsonResponse
     {
         $adminSenderEmail = config('app.adminemail');
         $data = $request->all();
 
-        $response = $this->repository->storeJobEmail($data);
+        $data = $this->repository->storeJobEmail($data);
 
-        return response($response);
+        return $this->successJsonResponse(null, $data);
     }
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function getHistory(Request $request)
+    public function getHistory(Request $request): JsonResponse
     {
+        $result = [];
         if($user_id = $request->get('user_id')) {
-
-            $response = $this->repository->getUsersJobsHistory($user_id, $request);
-            return response($response);
+            $result = $this->repository->getUsersJobsHistory($user_id, $request);
         }
 
-        return null;
+        return $this->successJsonResponse(null, $result);
     }
 
     /**
      * @param Request $request
      * @return mixed
      */
-    public function acceptJob(Request $request)
+    public function acceptJob(Request $request): JsonResponse
     {
         $data = $request->all();
         $user = $request->__authenticatedUser;
+        $result = $this->repository->acceptJob($data, $user);
 
-        $response = $this->repository->acceptJob($data, $user);
-
-        return response($response);
+        return $this->successJsonResponse(null, $result);
     }
 
-    public function acceptJobWithId(Request $request)
+    public function acceptJobWithId(Request $request): JsonResponse
     {
         $data = $request->get('job_id');
         $user = $request->__authenticatedUser;
-
         $response = $this->repository->acceptJobWithId($data, $user);
 
-        return response($response);
+        return $this->successJsonResponse(null, $response);
     }
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function cancelJob(Request $request)
+    public function cancelJob(Request $request): JsonResponse
     {
         $data = $request->all();
         $user = $request->__authenticatedUser;
+        $result = $this->repository->cancelJobAjax($data, $user);
 
-        $response = $this->repository->cancelJobAjax($data, $user);
-
-        return response($response);
+        return $this->successJsonResponse("Job Cancelled", $result);
     }
 
     /**
      * @param Request $request
-     * @return mixed
+     * @return JsonResponse
      */
-    public function endJob(Request $request)
+    public function endJob(Request $request): JsonResponse
     {
         $data = $request->all();
-
         $response = $this->repository->endJob($data);
 
-        return response($response);
-
+        return $this->successJsonResponse("Job Ended", $response);
     }
 
-    public function customerNotCall(Request $request)
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function customerNotCall(Request $request): JsonResponse
     {
         $data = $request->all();
+        $this->repository->customerNotCall($data);
 
-        $response = $this->repository->customerNotCall($data);
+        return $this->successJsonResponse();
+    }
 
-        return response($response);
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getPotentialJobs(Request $request): JsonResponse
+    {
+        $user = $request->__authenticatedUser;
+        $result = $this->repository->getPotentialJobs($user);
 
+        return $this->successJsonResponse(null, $result);
     }
 
     /**
      * @param Request $request
      * @return mixed
      */
-    public function getPotentialJobs(Request $request)
+    public function getRequestInputValue (Request $request, string $name)
     {
-        $data = $request->all();
-        $user = $request->__authenticatedUser;
-
-        $response = $this->repository->getPotentialJobs($user);
-
-        return response($response);
+        return  $request->has($name) && ! empty($request->$name) ? $request->$name : '';
     }
 
-    public function distanceFeed(Request $request)
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function distanceFeed(Request $request): JsonResponse
     {
-        $data = $request->all();
+        $flagged = 'no';
 
-        if (isset($data['distance']) && $data['distance'] != "") {
-            $distance = $data['distance'];
-        } else {
-            $distance = "";
-        }
-        if (isset($data['time']) && $data['time'] != "") {
-            $time = $data['time'];
-        } else {
-            $time = "";
-        }
-        if (isset($data['jobid']) && $data['jobid'] != "") {
-            $jobid = $data['jobid'];
-        }
-
-        if (isset($data['session_time']) && $data['session_time'] != "") {
-            $session = $data['session_time'];
-        } else {
-            $session = "";
-        }
-
-        if ($data['flagged'] == 'true') {
-            if($data['admincomment'] == '') return "Please, add comment";
+        if ($request->boolean('flagged') && $request->filled('admincomment')) {
             $flagged = 'yes';
         } else {
-            $flagged = 'no';
-        }
-        
-        if ($data['manually_handled'] == 'true') {
-            $manually_handled = 'yes';
-        } else {
-            $manually_handled = 'no';
+            return $this->forbiddenJsonResponse("Please, add comment");
         }
 
-        if ($data['by_admin'] == 'true') {
-            $by_admin = 'yes';
-        } else {
-            $by_admin = 'no';
-        }
+        $jobid = $this->getRequestInputValue($request, 'jobid');
+        $distance = $this->getRequestInputValue($request, 'distance');
+        $time = $this->getRequestInputValue($request, 'time');
 
-        if (isset($data['admincomment']) && $data['admincomment'] != "") {
-            $admincomment = $data['admincomment'];
-        } else {
-            $admincomment = "";
-        }
         if ($time || $distance) {
-
-            $affectedRows = Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
+            Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
         }
+
+        $session = $this->getRequestInputValue($request, 'session_time');
+        $manually_handled = $request->boolean('manually_handled') ? 'yes': 'no';
+        $by_admin = $request->boolean('by_admin') ? 'yes': 'no';
+        $admincomment = $this->getRequestInputValue($request, 'admincomment');
 
         if ($admincomment || $session || $flagged || $manually_handled || $by_admin) {
+            $data = array(
+                'admin_comments' => $admincomment,
+                'flagged' => $flagged, 'session_time' => $session,
+                'manually_handled' => $manually_handled,
+                'by_admin' => $by_admin
+            );
 
-            $affectedRows1 = Job::where('id', '=', $jobid)->update(array('admin_comments' => $admincomment, 'flagged' => $flagged, 'session_time' => $session, 'manually_handled' => $manually_handled, 'by_admin' => $by_admin));
-
+            Job::where('id', '=', $jobid)->update($data);
         }
 
-        return response('Record updated!');
+        return $this->successJsonResponse('Record Updated');
     }
 
-    public function reopen(Request $request)
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function reopen(Request $request): JsonResponse
     {
         $data = $request->all();
-        $response = $this->repository->reopen($data);
+        $is_reopened = $this->repository->reopen($data);
 
-        return response($response);
+        if (! $is_reopened) {
+            return $this->errorJsonResponse("Please try again");
+        }
+
+        return $this->successJsonResponse('Tolk cancelled');
     }
 
-    public function resendNotifications(Request $request)
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function resendNotifications(Request $request): JsonResponse
     {
         $data = $request->all();
         $job = $this->repository->find($data['jobid']);
         $job_data = $this->repository->jobToData($job);
         $this->repository->sendNotificationTranslator($job, $job_data, '*');
 
-        return response(['success' => 'Push sent']);
+        return $this->successJsonResponse('Push sent');
     }
 
     /**
      * Sends SMS to Translator
      * @param Request $request
-     * @return \Illuminate\Contracts\Routing\ResponseFactory|\Symfony\Component\HttpFoundation\Response
+     * @return JsonResponse
      */
-    public function resendSMSNotifications(Request $request)
+    public function resendSMSNotifications(Request $request): JsonResponse
     {
         $data = $request->all();
         $job = $this->repository->find($data['jobid']);
-        $job_data = $this->repository->jobToData($job);
+        $this->repository->jobToData($job);
 
         try {
             $this->repository->sendSMSNotificationToTranslator($job);
-            return response(['success' => 'SMS sent']);
+            return $this->successJsonResponse('SMS sent');
         } catch (\Exception $e) {
-            return response(['success' => $e->getMessage()]);
+            return $this->errorJsonResponse($e->getMessage());
         }
     }
-
 }
